@@ -302,12 +302,11 @@
                 this.inbound.stream.tls.echServerKeys = "";
                 this.inbound.stream.tls.settings.echConfigList = "";
             },
-            async getNewVlessEnc() {
-                const selected = inModal.inbound.settings.selectedAuth;
-                if (!selected) {
-                    this.clearVlessEnc();
-                    return;
-                }
+            // Pulls the requested auth block from `xray vlessenc` (which always returns
+            // both X25519 and ML-KEM-768 variants) and applies it to the inbound's
+            // decryption/encryption strings. The auth mode is implied by the resulting
+            async getNewVlessEnc(authLabel) {
+                if (!authLabel) return;
 
                 inModal.loading(true);
                 const msg = await HttpUtil.get("/panel/api/server/getNewVlessEnc");
@@ -318,10 +317,10 @@
                 }
 
                 const auths = msg.obj.auths || [];
-                const block = auths.find((a) => a.label === selected);
+                const block = auths.find((a) => a.label === authLabel);
 
                 if (!block) {
-                    console.error("No auth block for", selected);
+                    console.error("No auth block for", authLabel);
                     return;
                 }
 
@@ -331,7 +330,6 @@
             clearVlessEnc() {
                 this.inbound.settings.decryption = "none";
                 this.inbound.settings.encryption = "none";
-                this.inbound.settings.selectedAuth = undefined;
             },
             // Vision Seed methods - must be in Vue methods for proper template binding.
             // Mirror the inModal helpers but use Vue.set so the form re-renders.

@@ -2543,7 +2543,6 @@ Inbound.VLESSSettings = class extends Inbound.Settings {
         decryption = "none",
         encryption = "none",
         fallbacks = [],
-        selectedAuth = undefined,
         testseed = [],
     ) {
         super(protocol);
@@ -2551,7 +2550,6 @@ Inbound.VLESSSettings = class extends Inbound.Settings {
         this.decryption = decryption;
         this.encryption = encryption;
         this.fallbacks = fallbacks;
-        this.selectedAuth = selectedAuth;
         this.testseed = testseed;
     }
 
@@ -2587,7 +2585,6 @@ Inbound.VLESSSettings = class extends Inbound.Settings {
             json.decryption,
             json.encryption,
             Inbound.VLESSSettings.Fallback.fromJson(json.fallbacks || []),
-            json.selectedAuth,
             testseed,
         );
         return obj;
@@ -2609,9 +2606,6 @@ Inbound.VLESSSettings = class extends Inbound.Settings {
 
         if (this.fallbacks && this.fallbacks.length > 0) {
             json.fallbacks = Inbound.VLESSSettings.toJsonArray(this.fallbacks);
-        }
-        if (this.selectedAuth) {
-            json.selectedAuth = this.selectedAuth;
         }
 
         // testseed is only meaningful for the exact xtls-rprx-vision flow, and only when

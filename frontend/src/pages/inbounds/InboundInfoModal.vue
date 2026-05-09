@@ -180,8 +180,7 @@ function downloadText(content, filename) {
   FileManager.downloadTextFile(content, filename);
 }
 
-// Active tab in the 3-pane layout. Reset on each open below.
-const activeTab = ref('inbound');
+const activeTab = ref('client');
 
 // === Build state on open ===========================================
 function genSubLink(subId) {
@@ -195,7 +194,7 @@ watch(() => props.open, (next) => {
   if (!next) return;
   if (!props.dbInbound) return;
 
-  activeTab.value = 'inbound';
+  activeTab.value = props.dbInbound.toInbound().clients?.length ? 'client' : 'inbound';
   dbInbound.value = props.dbInbound;
   inbound.value = props.dbInbound.toInbound();
 
@@ -272,7 +271,214 @@ const showSubscriptionTab = computed(
     <template v-if="dbInbound && inbound">
       <a-tabs v-model:active-key="activeTab">
         <!-- ============================================================
-             TAB 1 — Inbound: protocol, transport, security, per-protocol
+             TAB 1 — Client: per-client info + share links + subscription
+             (subscription is folded in here so users don't need a third
+             tab — the sub URLs are per-client anyway).
+        ============================================================== -->
+        <a-tab-pane v-if="showClientTab" key="client" :tab="t('pages.inbounds.client')">
+          <table class="info-table block">
+            <tbody>
+              <tr>
+                <td>{{ t('pages.inbounds.email') }}</td>
+                <td>
+                  <a-tag v-if="clientSettings.email" color="green">{{ clientSettings.email }}</a-tag>
+                  <a-tag v-else color="red">{{ t('none') }}</a-tag>
+                </td>
+              </tr>
+              <tr v-if="clientSettings.id">
+                <td>ID</td>
+                <td><a-tag>{{ clientSettings.id }}</a-tag></td>
+              </tr>
+              <tr v-if="dbInbound.isVMess">
+                <td>{{ t('security') }}</td>
+                <td><a-tag>{{ clientSettings.security }}</a-tag></td>
+              </tr>
+              <tr v-if="inbound.canEnableTlsFlow()">
+                <td>Flow</td>
+                <td>
+                  <a-tag v-if="clientSettings.flow">{{ clientSettings.flow }}</a-tag>
+                  <a-tag v-else color="orange">{{ t('none') }}</a-tag>
+                </td>
+              </tr>
+              <tr v-if="clientSettings.password">
+                <td>{{ t('password') }}</td>
+                <td><a-tag class="info-large-tag">{{ clientSettings.password }}</a-tag></td>
+              </tr>
+              <tr>
+                <td>{{ t('status') }}</td>
+                <td>
+                  <a-tag v-if="isDepleted" color="red">{{ t('depleted') }}</a-tag>
+                  <a-tag v-else-if="isEnable" color="green">{{ t('enabled') }}</a-tag>
+                  <a-tag v-else>{{ t('disabled') }}</a-tag>
+                </td>
+              </tr>
+              <tr v-if="clientStats">
+                <td>{{ t('usage') }}</td>
+                <td>
+                  <a-tag color="green">
+                    {{ SizeFormatter.sizeFormat(clientStats.up + clientStats.down) }}
+                  </a-tag>
+                  <a-tag>
+                    ↑ {{ SizeFormatter.sizeFormat(clientStats.up) }} /
+                    {{ SizeFormatter.sizeFormat(clientStats.down) }} ↓
+                  </a-tag>
+                </td>
+              </tr>
+              <tr>
+                <td>{{ t('pages.inbounds.createdAt') }}</td>
+                <td>
+                  <a-tag v-if="clientSettings.created_at">{{ IntlUtil.formatDate(clientSettings.created_at, datepicker) }}</a-tag>
+                  <a-tag v-else>-</a-tag>
+                </td>
+              </tr>
+              <tr>
+                <td>{{ t('pages.inbounds.updatedAt') }}</td>
+                <td>
+                  <a-tag v-if="clientSettings.updated_at">{{ IntlUtil.formatDate(clientSettings.updated_at, datepicker) }}</a-tag>
+                  <a-tag v-else>-</a-tag>
+                </td>
+              </tr>
+              <tr>
+                <td>{{ t('lastOnline') }}</td>
+                <td><a-tag>{{ formatLastOnline(clientSettings.email || '') }}</a-tag></td>
+              </tr>
+              <tr v-if="clientSettings.comment">
+                <td>{{ t('comment') }}</td>
+                <td><a-tag class="info-large-tag">{{ clientSettings.comment }}</a-tag></td>
+              </tr>
+              <tr v-if="ipLimitEnable">
+                <td>{{ t('pages.inbounds.IPLimit') }}</td>
+                <td><a-tag>{{ clientSettings.limitIp }}</a-tag></td>
+              </tr>
+              <tr v-if="ipLimitEnable && clientSettings.limitIp > 0">
+                <td>{{ t('pages.inbounds.IPLimitlog') }}</td>
+                <td>
+                  <div class="ip-log">
+                    <div v-if="clientIpsArray.length > 0">
+                      <a-tag v-for="(item, idx) in clientIpsArray" :key="idx" color="blue" class="ip-log-row">{{ item
+                        }}</a-tag>
+                    </div>
+                    <a-tag v-else>{{ clientIpsText || t('tgbot.noIpRecord') }}</a-tag>
+                  </div>
+                  <div class="ip-log-actions">
+                    <SyncOutlined :spin="refreshing" @click="loadClientIps" />
+                    <a-tooltip :title="t('pages.inbounds.IPLimitlogclear')">
+                      <DeleteOutlined @click="clearClientIps" />
+                    </a-tooltip>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Remaining / total / expiry -->
+          <table class="info-table summary-table">
+            <thead>
+              <tr>
+                <th>{{ t('remained') }}</th>
+                <th>{{ t('pages.inbounds.totalUsage') }}</th>
+                <th>{{ t('pages.inbounds.expireDate') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <a-tag v-if="clientStats && clientSettings.totalGB > 0" :color="statsColor(clientStats)">{{
+                    getRemainingStats() }}</a-tag>
+                </td>
+                <td>
+                  <a-tag v-if="clientSettings.totalGB > 0" :color="clientStats ? statsColor(clientStats) : 'default'">{{
+                    SizeFormatter.sizeFormat(clientSettings.totalGB) }}</a-tag>
+                  <a-tag v-else color="purple">
+                    <InfinityIcon />
+                  </a-tag>
+                </td>
+                <td>
+                  <a-tag v-if="clientSettings.expiryTime > 0"
+                    :color="ColorUtils.usageColor(Date.now(), expireDiff, clientSettings.expiryTime)">{{
+                      IntlUtil.formatDate(clientSettings.expiryTime, datepicker) }}</a-tag>
+                  <a-tag v-else-if="clientSettings.expiryTime < 0" color="green">
+                    {{ clientSettings.expiryTime / -86400000 }} {{ t('day') }}
+                  </a-tag>
+                  <a-tag v-else color="purple">
+                    <InfinityIcon />
+                  </a-tag>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Telegram chat id -->
+          <template v-if="tgBotEnable && clientSettings.tgId">
+            <a-divider>Telegram</a-divider>
+            <div class="tg-row">
+              <a-tag color="blue">{{ clientSettings.tgId }}</a-tag>
+              <a-tooltip :title="t('copy')">
+                <a-button size="small" @click="copyText(clientSettings.tgId)">
+                  <template #icon>
+                    <CopyOutlined />
+                  </template>
+                </a-button>
+              </a-tooltip>
+            </div>
+          </template>
+
+          <!-- Per-client share links (no QR) -->
+          <template v-if="dbInbound.hasLink() && links.length > 0">
+            <a-divider>{{ t('pages.inbounds.copyLink') }}</a-divider>
+            <div v-for="(link, idx) in links" :key="idx" class="link-panel">
+              <div class="link-panel-header">
+                <a-tag color="green">{{ link.remark || `Link ${idx + 1}` }}</a-tag>
+                <a-tooltip :title="t('copy')">
+                  <a-button size="small" @click="copyText(link.link)">
+                    <template #icon>
+                      <CopyOutlined />
+                    </template>
+                  </a-button>
+                </a-tooltip>
+              </div>
+              <code class="link-panel-text">{{ link.link }}</code>
+            </div>
+          </template>
+
+          <!-- Subscription URLs — folded into the client tab so they sit
+               with the rest of the per-client data. Only visible when
+               subscriptions are enabled and this client has a subId. -->
+          <template v-if="showSubscriptionTab">
+            <a-divider>{{ t('subscription.title') }}</a-divider>
+            <div class="link-panel">
+              <div class="link-panel-header">
+                <a-tag color="green">{{ t('subscription.title') }}</a-tag>
+                <a-tooltip :title="t('copy')">
+                  <a-button size="small" @click="copyText(subLink)">
+                    <template #icon>
+                      <CopyOutlined />
+                    </template>
+                  </a-button>
+                </a-tooltip>
+              </div>
+              <a :href="subLink" target="_blank" rel="noopener noreferrer" class="link-panel-anchor">{{ subLink }}</a>
+            </div>
+
+            <div v-if="subSettings.subJsonEnable && subJsonLink" class="link-panel">
+              <div class="link-panel-header">
+                <a-tag color="green">JSON</a-tag>
+                <a-tooltip :title="t('copy')">
+                  <a-button size="small" @click="copyText(subJsonLink)">
+                    <template #icon>
+                      <CopyOutlined />
+                    </template>
+                  </a-button>
+                </a-tooltip>
+              </div>
+              <a :href="subJsonLink" target="_blank" rel="noopener noreferrer" class="link-panel-anchor">{{ subJsonLink
+                }}</a>
+            </div>
+          </template>
+        </a-tab-pane>
+
+        <!-- ============================================================
+             TAB 2 — Inbound: protocol, transport, security, per-protocol
         ============================================================== -->
         <a-tab-pane key="inbound" :tab="t('pages.xray.rules.inbound')">
           <dl class="info-list">
@@ -571,210 +777,6 @@ const showSubscriptionTab = computed(
               <code class="link-panel-text">{{ link.link }}</code>
             </div>
           </template>
-        </a-tab-pane>
-
-        <!-- ============================================================
-             TAB 2 — Client: per-client info + share links (no QR)
-        ============================================================== -->
-        <a-tab-pane v-if="showClientTab" key="client" :tab="t('pages.inbounds.client')">
-          <table class="info-table block">
-            <tbody>
-              <tr>
-                <td>{{ t('pages.inbounds.email') }}</td>
-                <td>
-                  <a-tag v-if="clientSettings.email" color="green">{{ clientSettings.email }}</a-tag>
-                  <a-tag v-else color="red">{{ t('none') }}</a-tag>
-                </td>
-              </tr>
-              <tr v-if="clientSettings.id">
-                <td>ID</td>
-                <td><a-tag>{{ clientSettings.id }}</a-tag></td>
-              </tr>
-              <tr v-if="dbInbound.isVMess">
-                <td>{{ t('security') }}</td>
-                <td><a-tag>{{ clientSettings.security }}</a-tag></td>
-              </tr>
-              <tr v-if="inbound.canEnableTlsFlow()">
-                <td>Flow</td>
-                <td>
-                  <a-tag v-if="clientSettings.flow">{{ clientSettings.flow }}</a-tag>
-                  <a-tag v-else color="orange">{{ t('none') }}</a-tag>
-                </td>
-              </tr>
-              <tr v-if="clientSettings.password">
-                <td>{{ t('password') }}</td>
-                <td><a-tag class="info-large-tag">{{ clientSettings.password }}</a-tag></td>
-              </tr>
-              <tr>
-                <td>{{ t('status') }}</td>
-                <td>
-                  <a-tag v-if="isDepleted" color="red">{{ t('depleted') }}</a-tag>
-                  <a-tag v-else-if="isEnable" color="green">{{ t('enabled') }}</a-tag>
-                  <a-tag v-else>{{ t('disabled') }}</a-tag>
-                </td>
-              </tr>
-              <tr v-if="clientStats">
-                <td>{{ t('usage') }}</td>
-                <td>
-                  <a-tag color="green">
-                    {{ SizeFormatter.sizeFormat(clientStats.up + clientStats.down) }}
-                  </a-tag>
-                  <a-tag>
-                    ↑ {{ SizeFormatter.sizeFormat(clientStats.up) }} /
-                    {{ SizeFormatter.sizeFormat(clientStats.down) }} ↓
-                  </a-tag>
-                </td>
-              </tr>
-              <tr>
-                <td>{{ t('pages.inbounds.createdAt') }}</td>
-                <td>
-                  <a-tag v-if="clientSettings.created_at">{{ IntlUtil.formatDate(clientSettings.created_at, datepicker) }}</a-tag>
-                  <a-tag v-else>-</a-tag>
-                </td>
-              </tr>
-              <tr>
-                <td>{{ t('pages.inbounds.updatedAt') }}</td>
-                <td>
-                  <a-tag v-if="clientSettings.updated_at">{{ IntlUtil.formatDate(clientSettings.updated_at, datepicker) }}</a-tag>
-                  <a-tag v-else>-</a-tag>
-                </td>
-              </tr>
-              <tr>
-                <td>{{ t('lastOnline') }}</td>
-                <td><a-tag>{{ formatLastOnline(clientSettings.email || '') }}</a-tag></td>
-              </tr>
-              <tr v-if="clientSettings.comment">
-                <td>{{ t('comment') }}</td>
-                <td><a-tag class="info-large-tag">{{ clientSettings.comment }}</a-tag></td>
-              </tr>
-              <tr v-if="ipLimitEnable">
-                <td>{{ t('pages.inbounds.IPLimit') }}</td>
-                <td><a-tag>{{ clientSettings.limitIp }}</a-tag></td>
-              </tr>
-              <tr v-if="ipLimitEnable && clientSettings.limitIp > 0">
-                <td>{{ t('pages.inbounds.IPLimitlog') }}</td>
-                <td>
-                  <div class="ip-log">
-                    <div v-if="clientIpsArray.length > 0">
-                      <a-tag v-for="(item, idx) in clientIpsArray" :key="idx" color="blue" class="ip-log-row">{{ item
-                        }}</a-tag>
-                    </div>
-                    <a-tag v-else>{{ clientIpsText || t('tgbot.noIpRecord') }}</a-tag>
-                  </div>
-                  <div class="ip-log-actions">
-                    <SyncOutlined :spin="refreshing" @click="loadClientIps" />
-                    <a-tooltip :title="t('pages.inbounds.IPLimitlogclear')">
-                      <DeleteOutlined @click="clearClientIps" />
-                    </a-tooltip>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Remaining / total / expiry -->
-          <table class="info-table summary-table">
-            <thead>
-              <tr>
-                <th>{{ t('remained') }}</th>
-                <th>{{ t('pages.inbounds.totalUsage') }}</th>
-                <th>{{ t('pages.inbounds.expireDate') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>
-                  <a-tag v-if="clientStats && clientSettings.totalGB > 0" :color="statsColor(clientStats)">{{
-                    getRemainingStats() }}</a-tag>
-                </td>
-                <td>
-                  <a-tag v-if="clientSettings.totalGB > 0" :color="clientStats ? statsColor(clientStats) : 'default'">{{
-                    SizeFormatter.sizeFormat(clientSettings.totalGB) }}</a-tag>
-                  <a-tag v-else color="purple">
-                    <InfinityIcon />
-                  </a-tag>
-                </td>
-                <td>
-                  <a-tag v-if="clientSettings.expiryTime > 0"
-                    :color="ColorUtils.usageColor(Date.now(), expireDiff, clientSettings.expiryTime)">{{
-                      IntlUtil.formatDate(clientSettings.expiryTime, datepicker) }}</a-tag>
-                  <a-tag v-else-if="clientSettings.expiryTime < 0" color="green">
-                    {{ clientSettings.expiryTime / -86400000 }} {{ t('day') }}
-                  </a-tag>
-                  <a-tag v-else color="purple">
-                    <InfinityIcon />
-                  </a-tag>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Telegram chat id -->
-          <template v-if="tgBotEnable && clientSettings.tgId">
-            <a-divider>Telegram</a-divider>
-            <div class="tg-row">
-              <a-tag color="blue">{{ clientSettings.tgId }}</a-tag>
-              <a-tooltip :title="t('copy')">
-                <a-button size="small" @click="copyText(clientSettings.tgId)">
-                  <template #icon>
-                    <CopyOutlined />
-                  </template>
-                </a-button>
-              </a-tooltip>
-            </div>
-          </template>
-
-          <!-- Per-client share links (no QR) -->
-          <template v-if="dbInbound.hasLink() && links.length > 0">
-            <a-divider>{{ t('pages.inbounds.copyLink') }}</a-divider>
-            <div v-for="(link, idx) in links" :key="idx" class="link-panel">
-              <div class="link-panel-header">
-                <a-tag color="green">{{ link.remark || `Link ${idx + 1}` }}</a-tag>
-                <a-tooltip :title="t('copy')">
-                  <a-button size="small" @click="copyText(link.link)">
-                    <template #icon>
-                      <CopyOutlined />
-                    </template>
-                  </a-button>
-                </a-tooltip>
-              </div>
-              <code class="link-panel-text">{{ link.link }}</code>
-            </div>
-          </template>
-        </a-tab-pane>
-
-        <!-- ============================================================
-             TAB 3 — Subscription: clickable subscription URLs
-        ============================================================== -->
-        <a-tab-pane v-if="showSubscriptionTab" key="subscription" :tab="t('subscription.title')">
-          <div class="link-panel">
-            <div class="link-panel-header">
-              <a-tag color="green">{{ t('subscription.title') }}</a-tag>
-              <a-tooltip :title="t('copy')">
-                <a-button size="small" @click="copyText(subLink)">
-                  <template #icon>
-                    <CopyOutlined />
-                  </template>
-                </a-button>
-              </a-tooltip>
-            </div>
-            <a :href="subLink" target="_blank" rel="noopener noreferrer" class="link-panel-anchor">{{ subLink }}</a>
-          </div>
-
-          <div v-if="subSettings.subJsonEnable && subJsonLink" class="link-panel">
-            <div class="link-panel-header">
-              <a-tag color="green">JSON</a-tag>
-              <a-tooltip :title="t('copy')">
-                <a-button size="small" @click="copyText(subJsonLink)">
-                  <template #icon>
-                    <CopyOutlined />
-                  </template>
-                </a-button>
-              </a-tooltip>
-            </div>
-            <a :href="subJsonLink" target="_blank" rel="noopener noreferrer" class="link-panel-anchor">{{ subJsonLink
-              }}</a>
-          </div>
         </a-tab-pane>
       </a-tabs>
     </template>

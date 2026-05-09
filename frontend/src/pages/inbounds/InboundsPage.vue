@@ -549,12 +549,12 @@ function onRowAction({ key, dbInbound }) {
           <a-spin :spinning="!fetched" :delay="200" tip="Loading…" size="large">
             <div v-if="!fetched" class="loading-spacer" />
 
-            <a-row v-else :gutter="[isMobile ? 8 : 16, isMobile ? 0 : 12]">
+            <a-row v-else :gutter="[isMobile ? 8 : 16, 12]">
               <!-- Summary statistics card -->
               <a-col :span="24">
                 <a-card size="small" hoverable class="summary-card">
                   <a-row :gutter="[16, 12]">
-                    <a-col :sm="12" :md="5">
+                    <a-col :xs="12" :sm="12" :md="5">
                       <CustomStatistic :title="t('pages.inbounds.totalDownUp')"
                         :value="`${SizeFormatter.sizeFormat(totals.up)} / ${SizeFormatter.sizeFormat(totals.down)}`">
                         <template #prefix>
@@ -562,7 +562,7 @@ function onRowAction({ key, dbInbound }) {
                         </template>
                       </CustomStatistic>
                     </a-col>
-                    <a-col :sm="12" :md="5">
+                    <a-col :xs="12" :sm="12" :md="5">
                       <CustomStatistic :title="t('pages.inbounds.totalUsage')"
                         :value="SizeFormatter.sizeFormat(totals.up + totals.down)">
                         <template #prefix>
@@ -570,7 +570,7 @@ function onRowAction({ key, dbInbound }) {
                         </template>
                       </CustomStatistic>
                     </a-col>
-                    <a-col :sm="12" :md="5">
+                    <a-col :xs="12" :sm="12" :md="5">
                       <CustomStatistic :title="t('pages.inbounds.allTimeTrafficUsage')"
                         :value="SizeFormatter.sizeFormat(totals.allTime)">
                         <template #prefix>
@@ -578,14 +578,14 @@ function onRowAction({ key, dbInbound }) {
                         </template>
                       </CustomStatistic>
                     </a-col>
-                    <a-col :sm="12" :md="5">
+                    <a-col :xs="12" :sm="12" :md="5">
                       <CustomStatistic :title="t('pages.inbounds.inboundCount')" :value="String(dbInbounds.length)">
                         <template #prefix>
                           <BarsOutlined />
                         </template>
                       </CustomStatistic>
                     </a-col>
-                    <a-col :sm="24" :md="4">
+                    <a-col :xs="24" :sm="24" :md="4">
                       <CustomStatistic :title="t('clients')" value=" ">
                         <template #prefix>
                           <a-space direction="horizontal">

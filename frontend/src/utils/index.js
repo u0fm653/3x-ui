@@ -677,7 +677,7 @@ export class CookieManager {
 // "no quota / no expiry / unlimited" sentinel since the AD-Vue green
 // would otherwise read as "healthy / under limit".
 const COLORS = {
-    success: '#52c41a', // AD-Vue success — within quota
+    success: '#389e0a', // AD-Vue green-7 — within quota (toned down from green-6 #52c41a, which was too bright on dark themes)
     warning: '#faad14', // AD-Vue gold — close to quota / about to expire
     danger: '#ff4d4f',  // AD-Vue red — depleted / expired
     purple: '#722ed1',  // AD-Vue purple — unlimited / no expiry

@@ -166,22 +166,20 @@ function rowKey(client) {
 
 <template>
   <div class="client-list" :class="{ 'is-mobile': isMobile, 'is-dark': isDarkTheme }">
-    <!-- ============== Header (desktop only) ============== -->
-    <div v-if="!isMobile" class="client-row client-list-header">
-      <div class="cell cell-actions">{{ t('pages.settings.actions') }}</div>
-      <div class="cell cell-enable">{{ t('enable') }}</div>
-      <div class="cell cell-online">{{ t('online') }}</div>
-      <div class="cell cell-client">{{ t('pages.inbounds.client') }}</div>
-      <div class="cell cell-traffic">{{ t('pages.inbounds.traffic') }}</div>
-      <div class="cell cell-alltime">{{ t('pages.inbounds.allTimeTraffic') }}</div>
-      <div class="cell cell-expiry">{{ t('pages.inbounds.expireDate') }}</div>
-    </div>
+    <!-- ====================== Desktop: grid table ===================== -->
+    <template v-if="!isMobile">
+      <div class="client-row client-list-header">
+        <div class="cell cell-actions">{{ t('pages.settings.actions') }}</div>
+        <div class="cell cell-enable">{{ t('enable') }}</div>
+        <div class="cell cell-online">{{ t('online') }}</div>
+        <div class="cell cell-client">{{ t('pages.inbounds.client') }}</div>
+        <div class="cell cell-traffic">{{ t('pages.inbounds.traffic') }}</div>
+        <div class="cell cell-alltime">{{ t('pages.inbounds.allTimeTraffic') }}</div>
+        <div class="cell cell-expiry">{{ t('pages.inbounds.expireDate') }}</div>
+      </div>
 
-    <!-- ============== Body rows ============== -->
-    <div v-for="client in clients" :key="rowKey(client)" class="client-row">
-      <!-- Desktop: action icon row | Mobile: dropdown menu -->
-      <div class="cell cell-actions">
-        <template v-if="!isMobile">
+      <div v-for="client in clients" :key="rowKey(client)" class="client-row">
+        <div class="cell cell-actions">
           <a-tooltip v-if="dbInbound.hasLink()" :title="t('qrCode')">
             <QrcodeOutlined class="row-icon" @click="emit('qrcode-client', { dbInbound, client })" />
           </a-tooltip>
@@ -197,181 +195,189 @@ function rowKey(client) {
           <a-tooltip v-if="isRemovable" :title="t('delete')">
             <DeleteOutlined class="row-icon danger" @click="confirmDelete(client)" />
           </a-tooltip>
-        </template>
-        <a-dropdown v-else :trigger="['click']">
-          <EllipsisOutlined class="row-icon" @click.prevent />
-          <template #overlay>
-            <a-menu>
-              <a-menu-item v-if="dbInbound.hasLink()" @click="emit('qrcode-client', { dbInbound, client })">
-                <QrcodeOutlined /> {{ t('qrCode') }}
-              </a-menu-item>
-              <a-menu-item @click="emit('edit-client', { dbInbound, client })">
-                <EditOutlined /> {{ t('edit') }}
-              </a-menu-item>
-              <a-menu-item @click="emit('info-client', { dbInbound, client })">
-                <InfoCircleOutlined /> {{ t('info') }}
-              </a-menu-item>
-              <a-menu-item v-if="client.email" @click="confirmReset(client)">
-                <RetweetOutlined /> {{ t('pages.inbounds.resetTraffic') }}
-              </a-menu-item>
-              <a-menu-item v-if="isRemovable" @click="confirmDelete(client)">
-                <DeleteOutlined /> <span class="danger">{{ t('delete') }}</span>
-              </a-menu-item>
-            </a-menu>
+        </div>
+
+        <div class="cell cell-enable">
+          <a-switch :checked="client.enable" size="small"
+            @change="(next) => emit('toggle-enable-client', { dbInbound, client, next })" />
+        </div>
+
+        <div class="cell cell-online">
+          <a-popover>
+            <template #content>{{ t('lastOnline') }}: {{ lastOnlineLabel(client.email) }}</template>
+            <a-tag v-if="client.enable && isClientOnline(client.email)" color="green">{{ t('online') }}</a-tag>
+            <a-tag v-else>{{ t('offline') }}</a-tag>
+          </a-popover>
+        </div>
+
+        <div class="cell cell-client">
+          <a-tooltip>
+            <template #title>
+              <template v-if="isClientDepleted(client.email)">{{ t('depleted') }}</template>
+              <template v-else-if="!client.enable">{{ t('disabled') }}</template>
+              <template v-else-if="isClientOnline(client.email)">{{ t('online') }}</template>
+              <template v-else>{{ t('offline') }}</template>
+            </template>
+            <a-badge :color="statusBadgeColor(client)" />
+          </a-tooltip>
+          <div class="client-id-stack">
+            <a-tooltip :title="client.email">
+              <span class="client-email">{{ client.email }}</span>
+            </a-tooltip>
+            <span v-if="client.comment && client.comment.trim()" class="client-comment">
+              {{ client.comment.length > 50 ? client.comment.substring(0, 47) + '…' : client.comment }}
+            </span>
+          </div>
+        </div>
+
+        <div class="cell cell-traffic">
+          <a-popover>
+            <template v-if="client.email" #content>
+              <table cellpadding="2">
+                <tbody>
+                  <tr>
+                    <td>↑ {{ SizeFormatter.sizeFormat(getUp(client.email)) }}</td>
+                    <td>↓ {{ SizeFormatter.sizeFormat(getDown(client.email)) }}</td>
+                  </tr>
+                  <tr v-if="client.totalGB > 0">
+                    <td>{{ t('remained') }}</td>
+                    <td>{{ SizeFormatter.sizeFormat(getRem(client.email)) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+            <div class="usage-bar">
+              <span class="usage-text">{{ SizeFormatter.sizeFormat(getSum(client.email)) }}</span>
+              <a-progress v-if="!client.enable" :stroke-color="isDarkTheme ? 'rgb(72,84,105)' : '#bcbcbc'"
+                :show-info="false" :percent="statsProgress(client.email)" size="small" />
+              <a-progress v-else-if="client.totalGB > 0" :stroke-color="clientStatsColor(client.email)"
+                :show-info="false" :status="isClientDepleted(client.email) ? 'exception' : ''"
+                :percent="statsProgress(client.email)" size="small" />
+              <a-progress v-else :show-info="false" :percent="100" stroke-color="#722ed1" size="small" />
+              <span class="usage-text">
+                <InfinityIcon v-if="isUnlimitedTotal(client)" />
+                <template v-else>{{ totalGbDisplay(client) }}</template>
+              </span>
+            </div>
+          </a-popover>
+        </div>
+
+        <div class="cell cell-alltime">
+          <a-tag>{{ SizeFormatter.sizeFormat(getAllTime(client.email)) }}</a-tag>
+        </div>
+
+        <div class="cell cell-expiry">
+          <template v-if="client.expiryTime !== 0 && client.reset > 0">
+            <a-popover>
+              <template #content>
+                <span v-if="client.expiryTime < 0">{{ t('pages.client.delayedStart') }}</span>
+                <span v-else>{{ IntlUtil.formatDate(client.expiryTime, datepicker) }}</span>
+              </template>
+              <div class="usage-bar">
+                <span class="usage-text">{{ IntlUtil.formatRelativeTime(client.expiryTime) }}</span>
+                <a-progress :show-info="false" :status="isClientDepleted(client.email) ? 'exception' : ''"
+                  :percent="expireProgress(client.expiryTime, client.reset)" size="small" />
+                <span class="usage-text">{{ client.reset }}d</span>
+              </div>
+            </a-popover>
           </template>
-        </a-dropdown>
+          <a-popover v-else-if="client.expiryTime !== 0">
+            <template #content>
+              <span v-if="client.expiryTime < 0">{{ t('pages.client.delayedStart') }}</span>
+              <span v-else>{{ IntlUtil.formatDate(client.expiryTime) }}</span>
+            </template>
+            <a-tag :style="{ minWidth: '50px', border: 'none' }"
+              :color="ColorUtils.userExpiryColor(expireDiff, client, isDarkTheme)">
+              {{ IntlUtil.formatRelativeTime(client.expiryTime) }}
+            </a-tag>
+          </a-popover>
+          <a-tag v-else :color="ColorUtils.userExpiryColor(expireDiff, client, isDarkTheme)"
+            :style="{ border: 'none' }" class="infinite-tag">
+            <InfinityIcon />
+          </a-tag>
+        </div>
       </div>
+    </template>
 
-      <!-- Enable switch (hidden on mobile, lives in dropdown) -->
-      <div v-if="!isMobile" class="cell cell-enable">
-        <a-switch :checked="client.enable" size="small"
-          @change="(next) => emit('toggle-enable-client', { dbInbound, client, next })" />
-      </div>
-
-      <!-- Online tag (desktop only) -->
-      <div v-if="!isMobile" class="cell cell-online">
-        <a-popover>
-          <template #content>{{ t('lastOnline') }}: {{ lastOnlineLabel(client.email) }}</template>
-          <a-tag v-if="client.enable && isClientOnline(client.email)" color="green">{{ t('online') }}</a-tag>
-          <a-tag v-else>{{ t('offline') }}</a-tag>
-        </a-popover>
-      </div>
-
-      <!-- Client identity: status dot + email + comment -->
-      <div class="cell cell-client">
-        <a-tooltip>
-          <template #title>
-            <template v-if="isClientDepleted(client.email)">{{ t('depleted') }}</template>
-            <template v-else-if="!client.enable">{{ t('disabled') }}</template>
-            <template v-else-if="isClientOnline(client.email)">{{ t('online') }}</template>
-            <template v-else>{{ t('offline') }}</template>
-          </template>
-          <a-badge :color="statusBadgeColor(client)" />
-        </a-tooltip>
-        <div class="client-id-stack">
+    <!-- ====================== Mobile: card list ======================= -->
+    <template v-else>
+      <div v-for="client in clients" :key="rowKey(client)" class="client-card">
+        <div class="client-card-head">
+          <a-tooltip>
+            <template #title>
+              <template v-if="isClientDepleted(client.email)">{{ t('depleted') }}</template>
+              <template v-else-if="!client.enable">{{ t('disabled') }}</template>
+              <template v-else-if="isClientOnline(client.email)">{{ t('online') }}</template>
+              <template v-else>{{ t('offline') }}</template>
+            </template>
+            <a-badge :color="statusBadgeColor(client)" />
+          </a-tooltip>
           <a-tooltip :title="client.email">
             <span class="client-email">{{ client.email }}</span>
           </a-tooltip>
-          <span v-if="client.comment && client.comment.trim()" class="client-comment">
-            {{ client.comment.length > 50 ? client.comment.substring(0, 47) + '…' : client.comment }}
-          </span>
+          <div class="client-card-actions">
+            <a-switch :checked="client.enable" size="small"
+              @change="(next) => emit('toggle-enable-client', { dbInbound, client, next })" />
+            <a-dropdown :trigger="['click']" placement="bottomRight">
+              <EllipsisOutlined class="row-icon" @click.prevent />
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item v-if="dbInbound.hasLink()" @click="emit('qrcode-client', { dbInbound, client })">
+                    <QrcodeOutlined /> {{ t('qrCode') }}
+                  </a-menu-item>
+                  <a-menu-item @click="emit('edit-client', { dbInbound, client })">
+                    <EditOutlined /> {{ t('edit') }}
+                  </a-menu-item>
+                  <a-menu-item @click="emit('info-client', { dbInbound, client })">
+                    <InfoCircleOutlined /> {{ t('info') }}
+                  </a-menu-item>
+                  <a-menu-item v-if="client.email" @click="confirmReset(client)">
+                    <RetweetOutlined /> {{ t('pages.inbounds.resetTraffic') }}
+                  </a-menu-item>
+                  <a-menu-item v-if="isRemovable" @click="confirmDelete(client)">
+                    <DeleteOutlined /> <span class="danger">{{ t('delete') }}</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
         </div>
-      </div>
 
-      <!-- Traffic with progress bar (desktop only) -->
-      <div v-if="!isMobile" class="cell cell-traffic">
-        <a-popover>
-          <template v-if="client.email" #content>
-            <table cellpadding="2">
-              <tbody>
-                <tr>
-                  <td>↑ {{ SizeFormatter.sizeFormat(getUp(client.email)) }}</td>
-                  <td>↓ {{ SizeFormatter.sizeFormat(getDown(client.email)) }}</td>
-                </tr>
-                <tr v-if="client.totalGB > 0">
-                  <td>{{ t('remained') }}</td>
-                  <td>{{ SizeFormatter.sizeFormat(getRem(client.email)) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </template>
-          <div class="usage-bar">
-            <span class="usage-text">{{ SizeFormatter.sizeFormat(getSum(client.email)) }}</span>
-            <a-progress v-if="!client.enable" :stroke-color="isDarkTheme ? 'rgb(72,84,105)' : '#bcbcbc'"
-              :show-info="false" :percent="statsProgress(client.email)" size="small" />
-            <a-progress v-else-if="client.totalGB > 0" :stroke-color="clientStatsColor(client.email)" :show-info="false"
-              :status="isClientDepleted(client.email) ? 'exception' : ''" :percent="statsProgress(client.email)"
-              size="small" />
-            <a-progress v-else :show-info="false" :percent="100" stroke-color="#722ed1" size="small" />
-            <span class="usage-text">
+        <div v-if="client.comment && client.comment.trim()" class="client-comment-line">
+          {{ client.comment.length > 80 ? client.comment.substring(0, 77) + '…' : client.comment }}
+        </div>
+
+        <div class="client-card-foot">
+          <div class="stat-row">
+            <span class="stat-label">{{ t('pages.inbounds.traffic') }}</span>
+            <a-tag :color="clientStatsColor(client.email)">
+              {{ SizeFormatter.sizeFormat(getSum(client.email)) }} /
               <InfinityIcon v-if="isUnlimitedTotal(client)" />
               <template v-else>{{ totalGbDisplay(client) }}</template>
-            </span>
+            </a-tag>
           </div>
-        </a-popover>
+          <div class="stat-row">
+            <span class="stat-label">{{ t('pages.inbounds.allTimeTraffic') }}</span>
+            <a-tag>{{ SizeFormatter.sizeFormat(getAllTime(client.email)) }}</a-tag>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">{{ t('online') }}</span>
+            <a-tag v-if="client.enable && isClientOnline(client.email)" color="green">{{ t('online') }}</a-tag>
+            <a-tag v-else>{{ t('offline') }}</a-tag>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">{{ t('pages.inbounds.expireDate') }}</span>
+            <a-tag v-if="client.expiryTime > 0" :color="ColorUtils.userExpiryColor(expireDiff, client, isDarkTheme)">
+              {{ IntlUtil.formatRelativeTime(client.expiryTime) }}
+            </a-tag>
+            <a-tag v-else-if="client.expiryTime < 0" color="green">
+              {{ -client.expiryTime / 86400000 }}d ({{ t('pages.client.delayedStart') }})
+            </a-tag>
+            <a-tag v-else color="purple"><InfinityIcon /></a-tag>
+          </div>
+        </div>
       </div>
-
-      <!-- All-time traffic (desktop only) -->
-      <div v-if="!isMobile" class="cell cell-alltime">
-        <a-tag>{{ SizeFormatter.sizeFormat(getAllTime(client.email)) }}</a-tag>
-      </div>
-
-      <!-- Expiry (desktop only) -->
-      <div v-if="!isMobile" class="cell cell-expiry">
-        <template v-if="client.expiryTime !== 0 && client.reset > 0">
-          <a-popover>
-            <template #content>
-              <span v-if="client.expiryTime < 0">{{ t('pages.client.delayedStart') }}</span>
-              <span v-else>{{ IntlUtil.formatDate(client.expiryTime, datepicker) }}</span>
-            </template>
-            <div class="usage-bar">
-              <span class="usage-text">{{ IntlUtil.formatRelativeTime(client.expiryTime) }}</span>
-              <a-progress :show-info="false" :status="isClientDepleted(client.email) ? 'exception' : ''"
-                :percent="expireProgress(client.expiryTime, client.reset)" size="small" />
-              <span class="usage-text">{{ client.reset }}d</span>
-            </div>
-          </a-popover>
-        </template>
-        <a-popover v-else-if="client.expiryTime !== 0">
-          <template #content>
-            <span v-if="client.expiryTime < 0">{{ t('pages.client.delayedStart') }}</span>
-            <span v-else>{{ IntlUtil.formatDate(client.expiryTime) }}</span>
-          </template>
-          <a-tag :style="{ minWidth: '50px', border: 'none' }"
-            :color="ColorUtils.userExpiryColor(expireDiff, client, isDarkTheme)">
-            {{ IntlUtil.formatRelativeTime(client.expiryTime) }}
-          </a-tag>
-        </a-popover>
-        <a-tag v-else :color="ColorUtils.userExpiryColor(expireDiff, client, isDarkTheme)" :style="{ border: 'none' }"
-          class="infinite-tag">
-          <InfinityIcon />
-        </a-tag>
-      </div>
-
-      <!-- Mobile-only summary popover (collapses traffic + expiry) -->
-      <div v-if="isMobile" class="cell cell-mobile-info">
-        <a-popover placement="bottomLeft" trigger="click">
-          <template #content>
-            <table cellpadding="2">
-              <tbody>
-                <tr>
-                  <td colspan="2" class="text-center">{{ t('pages.inbounds.traffic') }}</td>
-                </tr>
-                <tr>
-                  <td class="num-cell">{{ SizeFormatter.sizeFormat(getSum(client.email)) }}</td>
-                  <td class="num-cell">
-                    <InfinityIcon v-if="isUnlimitedTotal(client)" />
-                    <template v-else>{{ totalGbDisplay(client) }}</template>
-                  </td>
-                </tr>
-                <tr>
-                  <td colspan="2" class="text-center">
-                    <a-divider style="margin: 0" />
-                    {{ t('pages.inbounds.expireDate') }}
-                  </td>
-                </tr>
-                <tr>
-                  <td colspan="2" class="text-center">
-                    <a-tag v-if="client.expiryTime > 0">
-                      {{ IntlUtil.formatRelativeTime(client.expiryTime) }}
-                    </a-tag>
-                    <a-tag v-else-if="client.expiryTime < 0" color="green">
-                      {{ -client.expiryTime / 86400000 }}d ({{ t('pages.client.delayedStart') }})
-                    </a-tag>
-                    <a-tag v-else color="purple">
-                      <InfinityIcon />
-                    </a-tag>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </template>
-          <a-button shape="round" size="small">
-            <InfoCircleOutlined />
-          </a-button>
-        </a-popover>
-      </div>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -419,12 +425,6 @@ function rowKey(client) {
   letter-spacing: 0.02em;
 }
 
-/* Mobile collapses to a 3-column row: action menu, client info, info popover. */
-.client-list.is-mobile .client-row {
-  grid-template-columns: 36px minmax(0, 1fr) 36px;
-  padding: 8px 12px;
-}
-
 .cell {
   min-width: 0;
   /* allow grid children to shrink instead of overflowing */
@@ -433,8 +433,7 @@ function rowKey(client) {
 .cell-actions,
 .cell-enable,
 .cell-online,
-.cell-alltime,
-.cell-mobile-info {
+.cell-alltime {
   text-align: center;
   display: inline-flex;
   align-items: center;
@@ -540,71 +539,93 @@ function rowKey(client) {
   justify-content: center;
 }
 
-/* Mobile popover content table */
-.text-center {
-  text-align: center;
-}
-
-.num-cell {
-  text-align: right;
-  font-size: 12px;
-  padding: 2px 6px;
-}
-
-/* Strip AD-Vue's default expanded-cell padding so the grid sits
- * flush against the inbound row's left/right edges. */
+/* Strip AD-Vue's default expanded-cell padding so the desktop grid
+ * sits flush against the inbound row's left/right edges. */
 :deep(.ant-table-expanded-row > .ant-table-cell) {
   padding: 0 !important;
 }
 
-/* ===== Mobile polish ===============================================
- * On phones the row collapses to [actions][client][info]. Give those
- * cells room and bump the touch targets so the per-client action
- * dropdown + info popover are easier to hit with a thumb. */
-@media (max-width: 768px) {
-  .client-list.is-mobile .client-row {
-    grid-template-columns: 40px minmax(0, 1fr) 40px;
-    gap: 8px;
-    padding: 10px 10px;
-  }
+/* ===== Mobile card list =========================================== */
+.client-list.is-mobile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
 
-  .client-list.is-mobile .row-icon {
-    font-size: 20px;
-    padding: 6px;
-  }
+.client-card {
+  border: 1px solid rgba(128, 128, 128, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+:global(body.dark) .client-card {
+  border-color: rgba(255, 255, 255, 0.1);
+}
 
-  .client-list.is-mobile .cell-mobile-info .ant-btn {
-    width: 32px;
-    height: 32px;
-  }
+.client-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.client-card-head .client-email {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.client-card-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.client-card-actions .row-icon {
+  font-size: 20px;
+  padding: 4px;
+}
 
-  /* Make the email more readable; the comment can stay smaller. */
-  .client-list.is-mobile .client-email {
-    font-size: 14px;
-    font-weight: 500;
-  }
+.client-comment-line {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-  .client-list.is-mobile .client-comment {
-    font-size: 11px;
-  }
+.client-card-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.client-card-foot .stat-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.client-card-foot .stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  min-width: 96px;
+  flex-shrink: 0;
+}
+.client-card-foot :deep(.ant-tag) {
+  margin: 0;
+}
 
-  /* Bigger status badge so depleted/online state is visible at a glance. */
-  .client-list.is-mobile .cell-client :deep(.ant-badge-status-dot) {
-    width: 9px;
-    height: 9px;
-  }
-
-  /* Row separators feel cleaner with a slight surface tint per row
-   * — easier to scan than a hairline border on dark backgrounds. */
-  .client-list.is-mobile .client-row:not(.client-list-header) {
-    background: rgba(128, 128, 128, 0.04);
-    border-radius: 8px;
-    margin: 4px 8px;
-    border: none !important;
-  }
-
-  .client-list.is-mobile .client-row:not(.client-list-header):last-child {
-    border: none !important;
-  }
+/* Bigger status badge for thumb-readable state at a glance. */
+.client-card-head :deep(.ant-badge-status-dot) {
+  width: 9px;
+  height: 9px;
 }
 </style>

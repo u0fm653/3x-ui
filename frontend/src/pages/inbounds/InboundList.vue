@@ -21,6 +21,7 @@ import {
   BlockOutlined,
   DeleteOutlined,
   InfoCircleOutlined,
+  RightOutlined,
 } from '@ant-design/icons-vue';
 
 import { HttpUtil, ObjectUtil, SizeFormatter, IntlUtil, ColorUtils } from '@/utils';
@@ -140,13 +141,20 @@ const desktopColumns = computed(() => {
   );
   return cols;
 });
-const mobileColumns = computed(() => [
-  { title: 'ID', dataIndex: 'id', key: 'id', align: 'right', width: 10, responsive: ['s'] },
-  { title: t('pages.inbounds.operate'), key: 'action', align: 'center', width: 25 },
-  { title: t('pages.inbounds.remark'), dataIndex: 'remark', key: 'remark', align: 'left', width: 70 },
-  { title: t('info'), key: 'info', align: 'center', width: 10 },
-]);
-const columns = computed(() => (props.isMobile ? mobileColumns.value : desktopColumns.value));
+const columns = computed(() => desktopColumns.value);
+
+// Mobile expansion state — replaces a-table's expandable() since the
+// mobile branch renders a hand-rolled card list rather than a table.
+const expandedIds = ref(new Set());
+function toggleExpanded(id) {
+  const next = new Set(expandedIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  expandedIds.value = next;
+}
+function isExpanded(id) {
+  return expandedIds.value.has(id);
+}
 
 // ============ Pagination ============================================
 function paginationFor(rows) {
@@ -256,8 +264,155 @@ function showQrCodeMenu(dbInbound) {
         </a-radio-group>
       </div>
 
-      <a-table :columns="columns" :data-source="visibleInbounds" :row-key="(r) => r.id"
-        :pagination="paginationFor(visibleInbounds)" :scroll="isMobile ? {} : { x: 1000 }"
+      <!-- ====================== Mobile: card list ======================= -->
+      <div v-if="isMobile" class="inbound-cards">
+        <div v-if="visibleInbounds.length === 0" class="card-empty">—</div>
+
+        <div v-for="record in visibleInbounds" :key="record.id" class="inbound-card">
+          <!-- Header: chevron (multi-user only) + remark + enable + actions -->
+          <div class="card-head" @click="record.isMultiUser() && toggleExpanded(record.id)">
+            <RightOutlined v-if="record.isMultiUser()" class="card-expand"
+              :class="{ 'is-expanded': isExpanded(record.id) }" />
+            <span class="card-id">#{{ record.id }}</span>
+            <span class="tag-name">{{ record.remark }}</span>
+            <div class="card-actions" @click.stop>
+              <a-switch :checked="record.enable" size="small"
+                @change="(next) => onSwitchEnable(record, next)" />
+              <a-dropdown :trigger="['click']" placement="bottomRight">
+                <MoreOutlined class="row-action-trigger" @click.prevent />
+                <template #overlay>
+                  <a-menu @click="(a) => emit('row-action', { key: a.key, dbInbound: record })">
+                    <a-menu-item key="edit">
+                      <EditOutlined /> {{ t('edit') }}
+                    </a-menu-item>
+                    <a-menu-item v-if="showQrCodeMenu(record)" key="qrcode">
+                      <QrcodeOutlined /> {{ t('qrCode') }}
+                    </a-menu-item>
+                    <template v-if="record.isMultiUser()">
+                      <a-menu-item key="addClient">
+                        <UserAddOutlined /> {{ t('pages.client.add') }}
+                      </a-menu-item>
+                      <a-menu-item key="addBulkClient">
+                        <UsergroupAddOutlined /> {{ t('pages.client.bulk') }}
+                      </a-menu-item>
+                      <a-menu-item key="copyClients">
+                        <CopyOutlined /> {{ t('pages.client.copyFromInbound') }}
+                      </a-menu-item>
+                      <a-menu-item key="resetClients">
+                        <FileDoneOutlined /> {{ t('pages.inbounds.resetInboundClientTraffics') }}
+                      </a-menu-item>
+                      <a-menu-item key="export">
+                        <ExportOutlined /> {{ t('pages.inbounds.export') }}
+                      </a-menu-item>
+                      <a-menu-item v-if="subEnable" key="subs">
+                        <ExportOutlined /> {{ t('pages.inbounds.export') }} — {{ t('pages.settings.subSettings') }}
+                      </a-menu-item>
+                      <a-menu-item key="delDepletedClients" class="danger-item">
+                        <RestOutlined /> {{ t('pages.inbounds.delDepletedClients') }}
+                      </a-menu-item>
+                    </template>
+                    <template v-else>
+                      <a-menu-item key="showInfo">
+                        <InfoCircleOutlined /> {{ t('info') }}
+                      </a-menu-item>
+                    </template>
+                    <a-menu-item key="clipboard">
+                      <CopyOutlined /> {{ t('pages.inbounds.exportInbound') }}
+                    </a-menu-item>
+                    <a-menu-item key="resetTraffic">
+                      <RetweetOutlined /> {{ t('pages.inbounds.resetTraffic') }}
+                    </a-menu-item>
+                    <a-menu-item key="clone">
+                      <BlockOutlined /> {{ t('pages.inbounds.clone') }}
+                    </a-menu-item>
+                    <a-menu-item key="delete" class="danger-item">
+                      <DeleteOutlined /> {{ t('delete') }}
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </div>
+          </div>
+
+          <!-- 2-column labelled stat grid: protocol/port/node + traffic/clients/expiry -->
+          <div class="card-stats">
+            <div class="stat-row">
+              <span class="stat-label">{{ t('pages.inbounds.protocol') }}</span>
+              <a-tag color="purple">{{ record.protocol }}</a-tag>
+              <template v-if="record.isVMess || record.isVLess || record.isTrojan || record.isSS">
+                <a-tag color="green">{{ record.toInbound().stream.network }}</a-tag>
+                <a-tag v-if="record.toInbound().stream.isTls" color="blue">TLS</a-tag>
+                <a-tag v-if="record.toInbound().stream.isReality" color="blue">Reality</a-tag>
+              </template>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">{{ t('pages.inbounds.port') }}</span>
+              <a-tag>{{ record.port }}</a-tag>
+            </div>
+            <div v-if="nodesById.size > 0" class="stat-row">
+              <span class="stat-label">{{ t('pages.inbounds.node') }}</span>
+              <a-tag v-if="record.nodeId == null" color="default">
+                {{ t('pages.inbounds.localPanel') }}
+              </a-tag>
+              <a-tag v-else-if="nodesById.get(record.nodeId)"
+                :color="nodesById.get(record.nodeId).status === 'online' ? 'blue' : 'red'">
+                {{ nodesById.get(record.nodeId).name }}
+              </a-tag>
+              <a-tag v-else color="orange">#{{ record.nodeId }}</a-tag>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">{{ t('pages.inbounds.traffic') }}</span>
+              <a-tag :color="ColorUtils.usageColor(record.up + record.down, trafficDiff, record.total)">
+                {{ SizeFormatter.sizeFormat(record.up + record.down) }} /
+                <template v-if="record.total > 0">{{ SizeFormatter.sizeFormat(record.total) }}</template>
+                <InfinityIcon v-else />
+              </a-tag>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">{{ t('pages.inbounds.allTimeTraffic') }}</span>
+              <a-tag>{{ SizeFormatter.sizeFormat(record.allTime || 0) }}</a-tag>
+            </div>
+            <div v-if="clientCount[record.id]" class="stat-row">
+              <span class="stat-label">{{ t('clients') }}</span>
+              <a-tag color="green">{{ clientCount[record.id].clients }}</a-tag>
+              <a-tag v-if="clientCount[record.id].online.length" color="blue">
+                {{ clientCount[record.id].online.length }} {{ t('online') }}
+              </a-tag>
+              <a-tag v-if="clientCount[record.id].depleted.length" color="red">
+                {{ clientCount[record.id].depleted.length }} {{ t('depleted') }}
+              </a-tag>
+              <a-tag v-if="clientCount[record.id].expiring.length" color="orange">
+                {{ clientCount[record.id].expiring.length }} {{ t('depletingSoon') }}
+              </a-tag>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">{{ t('pages.inbounds.expireDate') }}</span>
+              <a-tag v-if="record.expiryTime > 0"
+                :color="ColorUtils.usageColor(Date.now(), expireDiff, record._expiryTime)">
+                {{ IntlUtil.formatRelativeTime(record.expiryTime) }}
+              </a-tag>
+              <a-tag v-else color="purple"><InfinityIcon /></a-tag>
+            </div>
+          </div>
+
+          <!-- Expanded client list (multi-user only) -->
+          <div v-if="record.isMultiUser() && isExpanded(record.id)" class="card-clients">
+            <ClientRowTable :db-inbound="record" :is-mobile="true"
+              :traffic-diff="trafficDiff" :expire-diff="expireDiff" :online-clients="onlineClients"
+              :last-online-map="lastOnlineMap" :is-dark-theme="isDarkTheme"
+              @edit-client="(p) => emit('edit-client', p)"
+              @qrcode-client="(p) => emit('qrcode-client', p)"
+              @info-client="(p) => emit('info-client', p)"
+              @reset-traffic-client="(p) => emit('reset-traffic-client', p)"
+              @delete-client="(p) => emit('delete-client', p)"
+              @toggle-enable-client="(p) => emit('toggle-enable-client', p)" />
+          </div>
+        </div>
+      </div>
+
+      <!-- ====================== Desktop: a-table ======================== -->
+      <a-table v-else :columns="columns" :data-source="visibleInbounds" :row-key="(r) => r.id"
+        :pagination="paginationFor(visibleInbounds)" :scroll="{ x: 1000 }"
         :style="{ marginTop: '10px' }" size="small"
         :row-class-name="(r) => (r.isMultiUser() ? '' : 'hide-expand-icon')">
         <!-- Per-inbound client list, expanded by clicking the row's
@@ -440,49 +595,6 @@ function showQrCodeMenu(dbInbound) {
             </a-tag>
           </template>
 
-          <!-- ============== Mobile info popover ============== -->
-          <template v-else-if="column.key === 'info'">
-            <a-popover placement="bottomRight" trigger="click">
-              <template #content>
-                <table cellpadding="2">
-                  <tbody>
-                    <tr>
-                      <td>{{ t('pages.inbounds.protocol') }}</td>
-                      <td><a-tag color="purple">{{ record.protocol }}</a-tag></td>
-                    </tr>
-                    <tr>
-                      <td>{{ t('pages.inbounds.port') }}</td>
-                      <td><a-tag>{{ record.port }}</a-tag></td>
-                    </tr>
-                    <tr v-if="clientCount[record.id]">
-                      <td>{{ t('clients') }}</td>
-                      <td><a-tag color="blue">{{ clientCount[record.id].clients }}</a-tag></td>
-                    </tr>
-                    <tr>
-                      <td>{{ t('pages.inbounds.traffic') }}</td>
-                      <td>
-                        <a-tag>
-                          {{ SizeFormatter.sizeFormat(record.up + record.down) }} /
-                          <template v-if="record.total > 0">{{ SizeFormatter.sizeFormat(record.total) }}</template>
-                          <InfinityIcon v-else />
-                        </a-tag>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>{{ t('pages.inbounds.expireDate') }}</td>
-                      <td>
-                        <a-tag v-if="record.expiryTime > 0">{{ IntlUtil.formatRelativeTime(record.expiryTime) }}</a-tag>
-                        <a-tag v-else color="purple">
-                          <InfinityIcon />
-                        </a-tag>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </template>
-              <InfoCircleOutlined class="row-info-trigger" />
-            </a-popover>
-          </template>
         </template>
       </a-table>
     </a-space>
@@ -510,8 +622,7 @@ function showQrCodeMenu(dbInbound) {
   gap: 4px;
 }
 
-.row-action-trigger,
-.row-info-trigger {
+.row-action-trigger {
   font-size: 20px;
   cursor: pointer;
 }
@@ -566,54 +677,124 @@ function showQrCodeMenu(dbInbound) {
   border-end-end-radius: 8px;
 }
 
-/* ===== Mobile-tightening ============================================
- * Below 768px the inbound list is on a tiny viewport — squeeze the
- * card chrome and table cell padding so the actual rows have room. */
+/* ===== Mobile card list ===========================================
+ * <768px renders inbounds as a vertical stack of cards via the
+ * v-if="isMobile" branch above; the desktop <a-table> isn't mounted
+ * so the legacy table-cell tightening rules went away. */
+.inbound-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.inbound-card {
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+:global(body.dark) .inbound-card {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.card-id {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.tag-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.card-expand {
+  font-size: 12px;
+  opacity: 0.6;
+  transition: transform 150ms ease;
+  flex-shrink: 0;
+}
+.card-expand.is-expanded {
+  transform: rotate(90deg);
+}
+
+.card-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stat-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  min-width: 96px;
+  flex-shrink: 0;
+}
+.card-stats :deep(.ant-tag) {
+  margin: 0;
+}
+
+.card-clients {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
+}
+
+.card-empty {
+  text-align: center;
+  opacity: 0.4;
+  padding: 20px 0;
+}
+
 @media (max-width: 768px) {
-  /* Card header/body breathe less on mobile */
   :deep(.ant-card-head) {
     padding: 0 12px;
     min-height: 44px;
   }
-
   :deep(.ant-card-head-title),
   :deep(.ant-card-extra) {
     padding: 8px 0;
   }
-
   :deep(.ant-card-body) {
     padding: 8px;
   }
 
-  /* Filter bar wraps cleanly without forcing block layout (which made
-   * the input + radio group stack on separate full-width lines). */
   .filter-bar.mobile {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
   }
-
   .filter-bar.mobile > * {
     margin-bottom: 0;
   }
 
-  /* Tighten table cell padding so the 3 visible columns get room. */
-  :deep(.ant-table-thead > tr > th),
-  :deep(.ant-table-tbody > tr > td) {
-    padding: 8px 6px;
-    font-size: 12px;
-  }
-
-  /* Slightly bigger expand chevron (touch target). */
-  :deep(.ant-table-row-expand-icon) {
-    width: 20px;
-    height: 20px;
-    line-height: 18px;
-  }
-
-  /* The action / info icons are the row's primary touch targets. */
-  .row-action-trigger,
-  .row-info-trigger {
+  .row-action-trigger {
     font-size: 22px;
     padding: 4px;
   }

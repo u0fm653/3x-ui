@@ -20,6 +20,7 @@ const { t } = useI18n();
 
 const props = defineProps({
   templateSettings: { type: Object, default: null },
+  clientReverseTags: { type: Array, default: () => [] },
 });
 
 const STRATEGY_LABELS = {
@@ -40,11 +41,16 @@ const rows = computed(() => {
   }));
 });
 
-const outboundTags = computed(
-  () => (props.templateSettings?.outbounds || [])
-    .filter((o) => o.tag)
-    .map((o) => o.tag),
-);
+const outboundTags = computed(() => {
+  const tags = new Set();
+  for (const o of props.templateSettings?.outbounds || []) {
+    if (o.tag) tags.add(o.tag);
+  }
+  for (const t of props.clientReverseTags || []) {
+    if (t) tags.add(t);
+  }
+  return [...tags];
+});
 
 // === Modal state ====================================================
 const modalOpen = ref(false);

@@ -306,7 +306,10 @@ function confirmRestart() {
                       <template #tab>
                         <ClusterOutlined /> <span>{{ t('pages.xray.Balancers') }}</span>
                       </template>
-                      <BalancersTab :template-settings="templateSettings" />
+                      <BalancersTab
+                        :template-settings="templateSettings"
+                        :client-reverse-tags="clientReverseTags"
+                      />
                     </a-tab-pane>
 
                     <a-tab-pane key="tpl-dns" class="tab-pane">

@@ -70,6 +70,10 @@ const inboundTagOptions = computed(() => {
     if (ib.tag) out.add(ib.tag);
   }
   for (const t of props.inboundTags || []) out.add(t);
+  for (const ob of props.templateSettings?.outbounds || []) {
+    const rt = ob?.reverse?.tag || ob?.settings?.reverse?.tag;
+    if (rt) out.add(rt);
+  }
   // dnsTag if DNS is configured.
   const dt = props.templateSettings?.dns?.tag;
   if (dt) out.add(dt);

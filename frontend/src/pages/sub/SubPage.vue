@@ -9,7 +9,6 @@ import {
   CopyOutlined,
 } from '@ant-design/icons-vue';
 import { message } from 'ant-design-vue';
-import QRious from 'qrious';
 
 import { ClipboardManager, IntlUtil, LanguageManager } from '@/utils';
 import {
@@ -71,32 +70,7 @@ function onLangChange(next) {
   LanguageManager.setLanguage(next);
 }
 
-// QR code rendering ===========================================
-// Each ref points at a canvas element we paint after mount; QRious
-// sizes itself from the element's `size` attribute.
-const subQr = ref(null);
-const subJsonQr = ref(null);
-const subClashQr = ref(null);
-
-function paintQr(canvas, value) {
-  if (!canvas || !value) return;
-  new QRious({
-    element: canvas,
-    size: 220,
-    value,
-    background: 'white',
-    backgroundAlpha: 1,
-    foreground: 'black',
-    padding: 4,
-    level: 'M',
-  });
-}
-
-onMounted(() => {
-  paintQr(subQr.value, subUrl);
-  paintQr(subJsonQr.value, subJsonUrl);
-  paintQr(subClashQr.value, subClashUrl);
-});
+const QR_SIZE = 240;
 
 // Actions =====================================================
 async function copy(value) {
@@ -184,7 +158,8 @@ const themeClass = computed(() => ({
                 <a-col :xs="24" :sm="subJsonUrl || subClashUrl ? 12 : 24" class="qr-col">
                   <div class="qr-box">
                     <a-tag color="purple" class="qr-tag">{{ t('pages.settings.subSettings') }}</a-tag>
-                    <canvas ref="subQr" class="qr-canvas" :title="t('copy')" @click="copy(subUrl)" />
+                    <a-qrcode class="qr-code" :value="subUrl" :size="QR_SIZE" type="svg" :bordered="false"
+                      :title="t('copy')" @click="copy(subUrl)" />
                   </div>
                 </a-col>
                 <a-col v-if="subJsonUrl" :xs="24" :sm="12" class="qr-col">
@@ -192,13 +167,15 @@ const themeClass = computed(() => ({
                     <a-tag color="purple" class="qr-tag">
                       {{ t('pages.settings.subSettings') }} JSON
                     </a-tag>
-                    <canvas ref="subJsonQr" class="qr-canvas" :title="t('copy')" @click="copy(subJsonUrl)" />
+                    <a-qrcode class="qr-code" :value="subJsonUrl" :size="QR_SIZE" type="svg" :bordered="false"
+                      :title="t('copy')" @click="copy(subJsonUrl)" />
                   </div>
                 </a-col>
                 <a-col v-if="subClashUrl" :xs="24" :sm="12" class="qr-col">
                   <div class="qr-box">
                     <a-tag color="purple" class="qr-tag">Clash / Mihomo</a-tag>
-                    <canvas ref="subClashQr" class="qr-canvas" :title="t('copy')" @click="copy(subClashUrl)" />
+                    <a-qrcode class="qr-code" :value="subClashUrl" :size="QR_SIZE" type="svg" :bordered="false"
+                      :title="t('copy')" @click="copy(subClashUrl)" />
                   </div>
                 </a-col>
               </a-row>
@@ -336,7 +313,7 @@ const themeClass = computed(() => ({
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  width: 220px;
+  width: 240px;
 }
 
 .qr-tag {
@@ -345,8 +322,9 @@ const themeClass = computed(() => ({
   margin: 0;
 }
 
-.qr-canvas {
+.qr-code {
   cursor: pointer;
+  padding: 0 !important;
   background: #fff;
   border-radius: 4px;
 }

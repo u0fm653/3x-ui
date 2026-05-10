@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -154,11 +155,17 @@ func (a *SUBController) subs(c *gin.Context) {
 // page's static asset references resolve correctly when the panel runs
 // behind a URL prefix.
 func (a *SUBController) serveSubPage(c *gin.Context, basePath string, page PageData) {
-	dist := webpkg.EmbeddedDist()
-	body, err := dist.ReadFile("dist/subpage.html")
-	if err != nil {
-		c.String(http.StatusInternalServerError, "missing embedded subpage")
-		return
+	var body []byte
+	if diskBody, diskErr := os.ReadFile("web/dist/subpage.html"); diskErr == nil {
+		body = diskBody
+	} else {
+		dist := webpkg.EmbeddedDist()
+		readBody, err := dist.ReadFile("dist/subpage.html")
+		if err != nil {
+			c.String(http.StatusInternalServerError, "missing embedded subpage")
+			return
+		}
+		body = readBody
 	}
 
 	// Vite emits absolute asset URLs (`/assets/...`); when the panel is

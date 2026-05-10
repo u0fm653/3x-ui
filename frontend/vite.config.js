@@ -163,7 +163,6 @@ export default defineConfig({
             || id.includes('/node_modules/@vue/')
           ) return 'vendor-vue';
           if (id.includes('dayjs')) return 'vendor-dayjs';
-          if (id.includes('qrious')) return 'vendor-qrious';
           if (id.includes('axios')) return 'vendor-axios';
           if (
             id.includes('vue3-persian-datetime-picker')

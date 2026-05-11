@@ -322,6 +322,14 @@ async function onDeleteClient({ dbInbound, client }) {
   if (msg?.success) await refresh();
 }
 
+async function onDeleteClients({ dbInbound, clients }) {
+  for (const client of clients) {
+    const clientId = getClientId(dbInbound.protocol, client);
+    await HttpUtil.post(`/panel/api/inbounds/${dbInbound.id}/delClient/${clientId}`);
+  }
+  await refresh();
+}
+
 async function onToggleEnableClient({ dbInbound, client, next }) {
   // Mirror legacy: clone the parsed inbound, flip enable on the matching
   // client, and post the whole client back through updateClient. This
@@ -593,9 +601,38 @@ function onRowAction({ key, dbInbound }) {
                           <a-space direction="horizontal">
                             <TeamOutlined />
                             <a-tag color="green">{{ totals.clients }}</a-tag>
-                            <a-tag v-if="totals.deactive.length">{{ totals.deactive.length }}</a-tag>
-                            <a-tag v-if="totals.depleted.length" color="red">{{ totals.depleted.length }}</a-tag>
-                            <a-tag v-if="totals.expiring.length" color="orange">{{ totals.expiring.length }}</a-tag>
+                            <a-popover v-if="totals.deactive.length" :title="t('disabled')">
+                              <template #content>
+                                <div class="client-email-list">
+                                  <div v-for="email in totals.deactive" :key="email">{{ email }}</div>
+                                </div>
+                              </template>
+                              <a-tag>{{ totals.deactive.length }}</a-tag>
+                            </a-popover>
+                            <a-popover v-if="totals.depleted.length" :title="t('depleted')">
+                              <template #content>
+                                <div class="client-email-list">
+                                  <div v-for="email in totals.depleted" :key="email">{{ email }}</div>
+                                </div>
+                              </template>
+                              <a-tag color="red">{{ totals.depleted.length }}</a-tag>
+                            </a-popover>
+                            <a-popover v-if="totals.expiring.length" :title="t('depletingSoon')">
+                              <template #content>
+                                <div class="client-email-list">
+                                  <div v-for="email in totals.expiring" :key="email">{{ email }}</div>
+                                </div>
+                              </template>
+                              <a-tag color="orange">{{ totals.expiring.length }}</a-tag>
+                            </a-popover>
+                            <a-popover v-if="totals.online.length" :title="t('online')">
+                              <template #content>
+                                <div class="client-email-list">
+                                  <div v-for="email in totals.online" :key="email">{{ email }}</div>
+                                </div>
+                              </template>
+                              <a-tag color="blue">{{ totals.online.length }}</a-tag>
+                            </a-popover>
                           </a-space>
                         </template>
                       </CustomStatistic>
@@ -613,7 +650,7 @@ function onRowAction({ key, dbInbound }) {
                   @add-inbound="onAddInbound" @general-action="onGeneralAction" @row-action="onRowAction"
                   @edit-client="onEditClient" @qrcode-client="onQrcodeClient" @info-client="onInfoClient"
                   @reset-traffic-client="onResetTrafficClient" @delete-client="onDeleteClient"
-                  @toggle-enable-client="onToggleEnableClient" />
+                  @delete-clients="onDeleteClients" @toggle-enable-client="onToggleEnableClient" />
               </a-col>
             </a-row>
           </a-spin>
@@ -690,5 +727,22 @@ function onRowAction({ key, dbInbound }) {
   .summary-card {
     padding: 8px;
   }
+}
+</style>
+
+<style>
+/* AD-Vue popovers teleport their content to <body>, so scoped styles
+   don't reach them — this block has to be unscoped. */
+.client-email-list {
+  max-height: 280px;
+  min-width: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.client-email-list > div {
+  padding: 2px 0;
+  font-size: 12px;
+  white-space: nowrap;
 }
 </style>

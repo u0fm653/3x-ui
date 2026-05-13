@@ -135,7 +135,6 @@ func loginFailureReason(err error) string {
 	return "invalid credentials"
 }
 
-// logout clears the session. The SPA performs the navigation client-side.
 func (a *IndexController) logout(c *gin.Context) {
 	user := session.GetLoginUser(c)
 	if user != nil {

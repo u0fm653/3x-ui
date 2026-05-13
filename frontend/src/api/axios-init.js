@@ -85,12 +85,8 @@ export function setupAxios() {
       if (status === 401) {
         if (!sessionExpired) {
           sessionExpired = true;
-          if (import.meta.env.DEV) {
-            const basePath = window.X_UI_BASE_PATH || '/';
-            window.location.href = `${basePath}login.html`;
-          } else {
-            window.location.reload();
-          }
+          const basePath = window.X_UI_BASE_PATH || '/';
+          window.location.replace(basePath);
         }
         return new Promise(() => { });
       }

@@ -1,8 +1,3 @@
-// Package netsafe provides SSRF-safe HTTP dialing primitives. A dialer
-// installed via SSRFGuardedDialContext resolves the host, rejects
-// private/internal IPs unless the per-request context whitelists them,
-// and dials the resolved IP directly so the IP checked is the IP used —
-// closing the DNS-rebinding TOCTOU window.
 package netsafe
 
 import (
@@ -14,8 +9,6 @@ import (
 	"time"
 )
 
-// IsBlockedIP returns true for loopback, RFC1918 private, link-local
-// (including 169.254.169.254 cloud-metadata), and unspecified addresses.
 func IsBlockedIP(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() || ip.IsUnspecified()
@@ -23,9 +16,6 @@ func IsBlockedIP(ip net.IP) bool {
 
 type allowPrivateCtxKey struct{}
 
-// ContextWithAllowPrivate marks a context as permitting outbound requests
-// to private/internal IPs. Use only for callers (e.g. LAN-resident nodes)
-// where the admin has opted in explicitly.
 func ContextWithAllowPrivate(ctx context.Context, allow bool) context.Context {
 	return context.WithValue(ctx, allowPrivateCtxKey{}, allow)
 }
@@ -37,9 +27,6 @@ func AllowPrivateFromContext(ctx context.Context) bool {
 
 var defaultDialer = &net.Dialer{Timeout: 10 * time.Second}
 
-// SSRFGuardedDialContext is a net/http Transport.DialContext implementation
-// that enforces IsBlockedIP unless the context opts in via
-// ContextWithAllowPrivate.
 func SSRFGuardedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -73,16 +60,8 @@ func SSRFGuardedDialContext(ctx context.Context, network, addr string) (net.Conn
 	return nil, lastErr
 }
 
-// hostnamePattern accepts RFC 1123 hostnames (letters, digits, hyphens,
-// dots). Bracketed IPv6 forms ("[::1]") are stripped before this check
-// runs in NormalizeHost.
 var hostnamePattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$`)
 
-// NormalizeHost validates that addr is a plain hostname or IP literal with
-// no embedded path/userinfo/port/scheme — anything that could be used to
-// smuggle URL components past callers that string-format URLs from user
-// input. Returns the bare host (no brackets); callers wrap IPv6 via
-// net.JoinHostPort as needed.
 func NormalizeHost(addr string) (string, error) {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
